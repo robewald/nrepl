@@ -6,7 +6,6 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 
-
 (ns nrepl.bencode-test
   (:require [clojure.test :refer [are deftest is testing]]
             [nrepl.bencode :as bencode :refer [read-bencode
@@ -14,11 +13,15 @@
                                                write-bencode
                                                write-netstring]])
   (:import clojure.lang.RT
-           [java.io ByteArrayInputStream ByteArrayOutputStream PushbackInputStream]))
+           #?@(:clj [[java.io ByteArrayInputStream ByteArrayOutputStream PushbackInputStream]]
+               :cljr [[System.IO MemoryStream]
+                      clojure.lang.PushbackInputStream
+                      [System.Text UTF8Encoding]])))
 
-(defn #^{:private true} >bytes
+(defn #^{:private true :tag #?(:clj "[B" :cljr |System.Byte[]|)} >bytes
   [#^String input]
-  (.getBytes input "UTF-8"))
+  #?(:clj  (.getBytes input "UTF-8")
+    :cljr (.GetBytes (UTF8Encoding.) input)))
 
 (defmulti #^{:private true} <bytes class)
 
@@ -26,9 +29,12 @@
   [input]
   input)
 
-(defmethod <bytes (RT/classForName "[B")
-  [#^"[B" input]
-  (String. input "UTF-8"))
+#?(:clj (defmethod <bytes (RT/classForName "[B")
+          [#^"[B" input]
+          (String. input "UTF-8"))
+   :cljr (defmethod <bytes |System.Byte[]|
+           [#^|System.Byte[]| input]
+           (.GetString (UTF8Encoding.) input)))
 
 (defmethod <bytes clojure.lang.IPersistentVector
   [input]
@@ -41,18 +47,21 @@
        (into {})))
 
 (defn- decode
-  [bytes & {:keys [reader]}]
+  [#^{:tag
+      #?(:clj "[B"
+         :cljr |System.Byte[]|)} bytes & {:keys [reader]}]
   (-> bytes
-      ByteArrayInputStream.
+      #?(:clj ByteArrayInputStream. :cljr MemoryStream.)
       PushbackInputStream.
       reader))
 
 (defn- >input
   [^String input & args]
-  (-> input
-      (.getBytes "UTF-8")
-      (#(apply decode % args))
-      <bytes))
+  (let [input #?(:clj (.getBytes input "UTF-8")
+                 :cljr (.GetBytes (UTF8Encoding.) input))]
+    (-> input
+        (#(apply decode % args))
+        <bytes)))
 
 (deftest test-netstring-reading
   (are [x y] (= (>input x :reader read-netstring) y)
@@ -90,16 +99,21 @@
     "l6:cheesei42ed3:ham4:eggsee" ["cheese" 42 {"ham" "eggs"}]
     "d6:cheesei42e3:haml4:eggsee" {"cheese" 42 "ham" ["eggs"]}))
 
-(defn- ^ByteArrayOutputStream >stream
+(defn- #^{:tag #?(:clj ByteArrayOutputStream :cljr MemoryStream)} >stream
   [thing & {:keys [writer]}]
-  (doto (ByteArrayOutputStream.)
+  (doto (#?(:clj ByteArrayOutputStream. :cljr MemoryStream.))
     (writer thing)))
 
 (defn- >output
   [& args]
-  (-> >stream
-      ^ByteArrayOutputStream (apply args)
-      (.toString "UTF-8")))
+  #?(:clj
+     (-> >stream
+         ^ByteArrayOutputStream (apply args)
+         (.toString "UTF-8"))
+     :cljr
+     (.GetString (UTF8Encoding.)
+                 (.ToArray
+                  ^MemoryStream (apply >stream args)))))
 
 (deftest test-netstring-writing
   (are [x y] (= (>output (>bytes x) :writer write-netstring) y)
@@ -123,7 +137,8 @@
     "Здравей, Свят!" "25:Здравей, Свят!"))
 
 (deftest test-input-stream-writing
-  (are [x y] (= (>output (ByteArrayInputStream. (>bytes x))
+  (are [x y] (= (>output #?(:clj (ByteArrayInputStream. (>bytes x))
+                            :cljr (MemoryStream. (>bytes x)))
                          :writer write-bencode) y)
     ""               "0:"
     "Hello, World!"  "13:Hello, World!"
@@ -139,10 +154,10 @@
     ;; Works for all integral types.
     ;; Note: BigInts (42N) not tested, since they are not
     ;; supported in 1.2.
-    (Byte/parseByte "42" 10)   "i42e"
-    (Short/parseShort "42" 10) "i42e"
-    (Integer/parseInt "42" 10) "i42e"
-    (Long/parseLong "42" 10)   "i42e"))
+    #?(:clj (Byte/parseByte "42" 10)   :cljr (Byte/Parse "42"))  "i42e"
+    #?(:clj (Short/parseShort "42" 10) :cljr (Int16/Parse "42")) "i42e"
+    #?(:clj (Integer/parseInt "42" 10) :cljr (Int32/Parse "42")) "i42e"
+    #?(:clj (Long/parseLong "42" 10)   :cljr (Int64/Parse "42")) "i42e"))
 
 (deftest test-named-writing
   (are [x y] (= (>output x :writer write-bencode) y)
@@ -189,19 +204,23 @@
                           -111 -115 85 -35 111 -37 84 20 63 -119 111 92 -92 22 63
                           -96 -79 -114 14 21 -117 -81 85 83 91 -71 27 26 -83 -58 6
                           73 -109 -91 -23 66 26 -71 -51 -40 42 -92 -55 117 110]
+                         #?(:clj (identity) :cljr (map #(if (< % 0) (+ % 128) %)))
                          (map byte)
-                         (into-array Byte/TYPE))]
+                         (into-array #?(:clj Byte/TYPE :cljr System.Byte)))]
+    (is (> (alength binary-data) 0))
     (is (= (seq binary-data)
            (-> {"data" binary-data}
                (>stream :writer write-bencode)
-               .toByteArray
+               #?(:clj .toByteArray :cljr .ToArray)
                (decode :reader read-bencode)
                (get "data")
                seq)))))
 
 (deftest unwritable-values
   (testing "write-bencode writes eagerly"
-    (let [out (ByteArrayOutputStream.)]
-      (is (thrown? IllegalArgumentException
+    (let [out (#?(:clj ByteArrayOutputStream. :cljr MemoryStream.))]
+      (is (thrown? #?(:clj IllegalArgumentException
+                      :cljr ArgumentException)
                    (write-bencode out {"obj" (Object.)})))
-      (is (= "d3:obj" (String. (.toByteArray out)))))))
+      (is (= "d3:obj" #?(:clj (String. (.toByteArray out))
+                         :cljr (.GetString (UTF8Encoding.) (.ToArray out))))))))

@@ -1,0 +1,9 @@
+;; (import '[System.IO StreamReader MemoryStream])
+;; (import '[System.Text UTF8Encoding])
+
+;; (println (.Read (StreamReader. (MemoryStream. (.GetBytes (UTF8Encoding. false false) "ä"))
+;;                                (UTF8Encoding. false false))))
+
+(require '[nrepl.bencode-test])
+
+(clojure.test/run-tests 'nrepl.bencode-test)

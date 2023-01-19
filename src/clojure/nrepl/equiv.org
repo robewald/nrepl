@@ -1,0 +1,32 @@
+*
+| java                          | C#                             | Comment                        |
+|-------------------------------+--------------------------------+--------------------------------|
+| java.io.EOFException          | System.IO.EndOfStreamException |                                |
+| java.io.ByteArrayOutputStream | System.IO.MemoryStream?        |                                |
+| java.io.EOFException          | System.IO.EndOfStreamException |                                |
+| java.io.InputStream           | System.IO.BinaryReader         |                                |
+| java.io.IOException           | System.IO.IOException          |                                |
+| java.io.OutputStream          | System.IO.StreamWriter         |                                |
+| java.io.PushbackInputStream   | System.IO.BinaryReader         | use Peek() instead of unread() |
+| [B                            | System.Byte[]                  | byte-array                     |
+| java.io.ByteArrayInputStream  | System.IO.MemoryStream         |                                |
+
+
+* Github issue
+I would like to be able to use Cider with ClojureCLR. There is an old port of nrepl 
+
+**Is your feature request related to a problem? Please describe.**
+
+A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+
+**Describe the solution you'd like**
+
+A clear and concise description of what you want to happen.
+
+**Describe alternatives you've considered**
+
+A clear and concise description of any alternative solutions or features you've considered.
+
+**Additional context**
+
+Add any other context about the feature request here.
